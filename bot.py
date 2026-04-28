@@ -320,7 +320,7 @@ async def handle_text_request(message: types.Message):
     text = (message.text or "").strip()
 if text == "📚 Обрати жанр":
     user_answers[user_id] = {}
-    await message.answer(
+        await message.answer(
         "Обери жанр:",
         reply_markup=make_keyboard("genre")
     )
@@ -337,7 +337,7 @@ if text == "📌 Мої збережені книги":
     for i, book in enumerate(saved, start=1):
         result += f"{i}. {book.get('title')} — {book.get('author')}\n"
 
-    await message.answer(result)
+        await message.answer(result)
     return
     if not text:
         return
@@ -345,7 +345,7 @@ if text == "📌 Мої збережені книги":
     user_saved_books.setdefault(user_id, [])
     user_shown_books.setdefault(user_id, [])
 
-    await message.answer("🤖 Думаю...")
+        await message.answer("🤖 Думаю...")
 
     try:
         response = await openai_client.responses.create(
