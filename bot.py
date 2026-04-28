@@ -149,12 +149,6 @@ def book_to_text(book, ai_reason=None):
 
     text += f"📝 Опис:\n{book.get('description', 'Опис поки не додано.')}"
 
-    if book.get("buy_link"):
-        text += f"\n\n🛒 Yakaboo: {book.get('buy_link')}"
-
-    if book.get("ksd_link"):
-        text += f"\n🛒 КСД: {book.get('ksd_link')}"
-
     return text
 
 
