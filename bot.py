@@ -7,7 +7,12 @@ from aiohttp import web
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
 from openai import AsyncOpenAI
 
 from books import BOOKS
@@ -68,7 +73,15 @@ def make_keyboard(step):
         ]
     )
 
-
+def main_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📚 Обрати жанр")],
+            [KeyboardButton(text="📌 Мої збережені книги")],
+        ],
+        resize_keyboard=True
+    )
+    
 def after_result_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -289,19 +302,43 @@ async def start(message: types.Message):
     user_answers[user_id] = {}
 
     await message.answer(
-        "Привіт 📚\nЯ допоможу підібрати книгу.\n\n"
-        "Можеш пройти короткий підбір кнопками або просто написати, що хочеш почитати.\n\n"
-        "Наприклад: «хочу романтичну книгу з легким настроєм».\n\n"
-        "Обери жанр:",
-        reply_markup=make_keyboard("genre")
-    )
+    "Привіт 📚\n"
+    "Я твій особистий AI-помічник для підбору книг.\n\n"
+    "Можеш одразу написати, яку книгу хочеш, або натиснути кнопку нижче.",
+    reply_markup=main_menu_keyboard()
+)
+
+await message.answer(
+    "Обери жанр:",
+    reply_markup=make_keyboard("genre")
+)
 
 
 @dp.message()
 async def handle_text_request(message: types.Message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
+if text == "📚 Обрати жанр":
+    user_answers[user_id] = {}
+    await message.answer(
+        "Обери жанр:",
+        reply_markup=make_keyboard("genre")
+    )
+    return
 
+if text == "📌 Мої збережені книги":
+    saved = user_saved_books.get(user_id, [])
+
+    if not saved:
+        await message.answer("У тебе ще немає збережених книг 📌")
+        return
+
+    result = "📌 Твої збережені книги:\n\n"
+    for i, book in enumerate(saved, start=1):
+        result += f"{i}. {book.get('title')} — {book.get('author')}\n"
+
+    await message.answer(result)
+    return
     if not text:
         return
 
