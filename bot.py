@@ -308,7 +308,7 @@ async def start(message: types.Message):
     reply_markup=main_menu_keyboard()
 )
 
-await message.answer(
+    await message.answer(
     "Обери жанр:",
     reply_markup=make_keyboard("genre")
 )
