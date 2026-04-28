@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from openai import OpenAI
+
 
 from books import BOOKS
 from google_books import search_google_books
@@ -14,7 +14,7 @@ load_dotenv()
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 user_answers = {}
 user_shown_books = {}
@@ -79,38 +79,6 @@ def after_result_keyboard():
             [InlineKeyboardButton(text="Інший жанр", callback_data="restart:yes")]
         ]
     )
-
-
-def ai_format_book(book, answers):
-    prompt = f"""
-Ти книжковий консультант. Відповідай тільки українською мовою.
-
-Книга:
-Назва: {book.get("title")}
-Автор: {book.get("author")}
-Опис: {book.get("description")}
-
-Побажання читача:
-Жанр: {OPTIONS["genre"].get(answers.get("genre"), "не вказано")}
-Настрій: {OPTIONS["mood"].get(answers.get("mood"), "не вказано")}
-Складність: {OPTIONS["level"].get(answers.get("level"), "не вказано")}
-Уникати: {OPTIONS["avoid"].get(answers.get("avoid"), "не вказано")}
-
-Зроби:
-1. Короткий опис книги українською, 2-3 речення.
-2. Чому ця книга може підійти читачу.
-Без спойлерів. Не використовуй англійську.
-"""
-
-    try:
-        response = client.responses.create(
-            model="gpt-4.1-mini",
-            input=prompt
-        )
-        return response.output_text
-    except Exception as e:
-        print("OPENAI ERROR:", e)
-        return "AI-опис тимчасово не спрацював, але ця книга може бути цікавим варіантом за обраним жанром."
 
 
 def find_books(user_id):
