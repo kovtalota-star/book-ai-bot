@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 from books import BOOKS
-from google_books import search_google_books
+
 
 load_dotenv()
 
