@@ -161,7 +161,22 @@ async def handle_buttons(callback: types.CallbackQuery):
 
     if user_id not in user_saved_books:
         user_saved_books[user_id] = []
+    if data == "saved:show":
+        saved = user_saved_books.get(user_id, [])
 
+        if not saved:
+            await callback.message.answer("У тебе ще немає збережених книг 📌")
+            await callback.answer()
+            return
+
+        text = "📌 Твої збережені книги:\n\n"
+
+        for i, book in enumerate(saved, start=1):
+            text += f"{i}. {book.get('title')} — {book.get('author')}\n"
+
+        await callback.message.answer(text)
+        await callback.answer()
+        return
     if data.startswith("save:"):
         index = int(data.split(":")[1])
         books = last_sent_books.get(user_id, [])
