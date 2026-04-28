@@ -318,33 +318,38 @@ async def start(message: types.Message):
 async def handle_text_request(message: types.Message):
     user_id = message.from_user.id
     text = (message.text or "").strip()
-if text == "📚 Обрати жанр":
-    user_answers[user_id] = {}
-    await message.answer(
-        "Обери жанр:",
-        reply_markup=make_keyboard("genre")
-    )
-    return
 
-if text == "📌 Мої збережені книги":
-    saved = user_saved_books.get(user_id, [])
-
-    if not saved:
-        await message.answer("У тебе ще немає збережених книг 📌")
-        return
-
-    result = "📌 Твої збережені книги:\n\n"
-    for i, book in enumerate(saved, start=1):
-        result += f"{i}. {book.get('title')} — {book.get('author')}\n"
-
-        await message.answer(result)
-    return
     if not text:
         return
 
     user_saved_books.setdefault(user_id, [])
     user_shown_books.setdefault(user_id, [])
 
+    # 📚 Обрати жанр
+    if text == "📚 Обрати жанр":
+        user_answers[user_id] = {}
+        await message.answer(
+            "Обери жанр:",
+            reply_markup=make_keyboard("genre")
+        )
+        return
+
+    # 📌 Збережені книги
+    if text == "📌 Мої збережені книги":
+        saved = user_saved_books.get(user_id, [])
+
+        if not saved:
+            await message.answer("У тебе ще немає збережених книг 📌")
+            return
+
+        result = "📌 Твої збережені книги:\n\n"
+        for i, book in enumerate(saved, start=1):
+            result += f"{i}. {book.get('title')} — {book.get('author')}\n"
+
+        await message.answer(result)
+        return
+
+    # 🤖 AI відповідає
     await message.answer("🤖 Думаю...")
 
     try:
