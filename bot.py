@@ -1,15 +1,14 @@
 import asyncio
+import json
 import os
+from difflib import SequenceMatcher
 
 from aiohttp import web
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from openai import OpenAI
-import os
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from openai import AsyncOpenAI
 
 from books import BOOKS
 
@@ -17,6 +16,10 @@ load_dotenv()
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
+
+# Додай OPENAI_API_KEY у Render → Environment
+openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+AI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
 user_answers = {}
 user_shown_books = {}
@@ -76,75 +79,252 @@ def after_result_keyboard():
     )
 
 
-def book_action_keyboard(book_index):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{book_index}")],
-            [InlineKeyboardButton(text="🔎 Схожі книги", callback_data=f"similar:{book_index}")],
-            [InlineKeyboardButton(text="🗑 Видалити зі збережених", callback_data=f"delete_saved:{book_index}")]
-        ]
-    )
+def book_action_keyboard(book_index, book=None):
+    buttons = [
+        [InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{book_index}")],
+        [InlineKeyboardButton(text="🔎 Схожі книги", callback_data=f"similar:{book_index}")],
+        [InlineKeyboardButton(text="🗑 Видалити зі збережених", callback_data=f"delete_saved:{book_index}")]
+    ]
+
+    buy_link = (book or {}).get("buy_link")
+    if buy_link:
+        buttons.insert(0, [InlineKeyboardButton(text="🛒 Дивитися на Yakaboo", url=buy_link)])
+
+    ksd_link = (book or {}).get("ksd_link")
+    if ksd_link:
+        buttons.insert(1, [InlineKeyboardButton(text="🛒 Дивитися на КСД", url=ksd_link)])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def find_books(user_id):
     answers = user_answers.get(user_id, {})
     genre = answers.get("genre")
+    mood = answers.get("mood", "any")
     level = answers.get("level", "any")
+    avoid = answers.get("avoid", "none")
     shown = user_shown_books.get(user_id, [])
 
     books = [b for b in BOOKS if b.get("genre") == genre]
+
+    if mood != "any":
+        filtered = [b for b in books if b.get("mood") == mood]
+        if len(filtered) >= 3:
+            books = filtered
 
     if level != "any":
         filtered = [b for b in books if b.get("level") == level]
         if len(filtered) >= 3:
             books = filtered
 
-    books = [
-        b for b in books
-        if b.get("title") not in shown
-    ]
+    if avoid == "romance":
+        books = [b for b in books if b.get("genre") != "romance"]
 
+    books = [b for b in books if b.get("title") not in shown]
     return books[:3]
 
 
-async def send_books(callback, books):
-    user_id = callback.from_user.id
+def book_to_text(book, ai_reason=None):
+    text = (
+        f"📚 {book.get('title')}\n"
+        f"👤 Автор: {book.get('author')}\n"
+        f"🏷 Жанр: {book.get('genre')}\n\n"
+    )
+
+    if ai_reason:
+        text += f"🤖 Чому підійшло:\n{ai_reason}\n\n"
+
+    text += f"📝 Опис:\n{book.get('description', 'Опис поки не додано.')}"
+
+    if book.get("buy_link"):
+        text += f"\n\n🛒 Yakaboo: {book.get('buy_link')}"
+
+    if book.get("ksd_link"):
+        text += f"\n🛒 КСД: {book.get('ksd_link')}"
+
+    return text
+
+
+async def send_books(callback_or_message, books, reasons=None):
+    user_id = callback_or_message.from_user.id
     last_sent_books[user_id] = books
+    reasons = reasons or {}
+
+    message = callback_or_message.message if hasattr(callback_or_message, "message") else callback_or_message
 
     for index, book in enumerate(books):
-        text = (
-            f"📚 {book.get('title')}\n"
-            f"👤 Автор: {book.get('author')}\n\n"
-            f"📝 Опис:\n{book.get('description')}"
-        )
+        text = book_to_text(book, reasons.get(book.get("title")))
+        image = book.get("image")
 
-        await callback.message.answer(
-            text,
-            reply_markup=book_action_keyboard(index)
-        )
+        if image:
+            await message.answer_photo(
+                photo=image,
+                caption=text[:1024],
+                reply_markup=book_action_keyboard(index, book)
+            )
+            if len(text) > 1024:
+                await message.answer(text[1024:])
+        else:
+            await message.answer(
+                text,
+                reply_markup=book_action_keyboard(index, book)
+            )
 
-    await callback.message.answer(
-        "Що робимо далі?",
+    await message.answer(
+        "Можеш написати запит своїми словами, наприклад: «хочу легкий детектив без жорстокості», або обрати дію нижче.",
         reply_markup=after_result_keyboard()
     )
+
+
+def local_score(query, book):
+    q = query.lower()
+    fields = " ".join([
+        str(book.get("title", "")),
+        str(book.get("author", "")),
+        str(book.get("genre", "")),
+        str(book.get("mood", "")),
+        str(book.get("level", "")),
+        str(book.get("description", "")),
+    ]).lower()
+
+    score = 0
+    for word in q.split():
+        if len(word) > 2 and word in fields:
+            score += 3
+
+    score += SequenceMatcher(None, q, fields[:500]).ratio()
+    return score
+
+
+def preselect_books(query, limit=30):
+    scored = sorted(
+        BOOKS,
+        key=lambda b: local_score(query, b),
+        reverse=True
+    )
+    return scored[:limit]
+
+
+async def ai_recommend_books(query, user_id):
+    candidates = preselect_books(query, limit=30)
+
+    catalog = []
+    for i, book in enumerate(candidates):
+        catalog.append({
+            "id": i,
+            "title": book.get("title"),
+            "author": book.get("author"),
+            "genre": book.get("genre"),
+            "mood": book.get("mood"),
+            "level": book.get("level"),
+            "description": book.get("description"),
+        })
+
+    prompt = f"""
+Ти AI-помічник Telegram-бота для підбору книг українською мовою.
+
+Завдання:
+- Підібрати рівно 3 книги тільки зі списку CATALOG.
+- Не вигадувати книжки, авторів або описів.
+- Врахувати запит користувача, жанр, настрій, складність і небажані теми.
+- Пояснення має бути коротким, людяним, українською мовою.
+
+USER_REQUEST:
+{query}
+
+CATALOG:
+{json.dumps(catalog, ensure_ascii=False)}
+
+Поверни тільки JSON без markdown:
+{{
+  "items": [
+    {{"id": 0, "reason": "коротке пояснення"}},
+    {{"id": 1, "reason": "коротке пояснення"}},
+    {{"id": 2, "reason": "коротке пояснення"}}
+  ]
+}}
+"""
+
+    try:
+        response = await openai_client.responses.create(
+            model=AI_MODEL,
+            input=prompt,
+            temperature=0.4,
+        )
+
+        raw = response.output_text.strip()
+        data = json.loads(raw)
+
+        selected = []
+        reasons = {}
+
+        for item in data.get("items", []):
+            idx = int(item.get("id"))
+            if 0 <= idx < len(candidates):
+                book = candidates[idx]
+                if book.get("title") not in [b.get("title") for b in selected]:
+                    selected.append(book)
+                    reasons[book.get("title")] = item.get("reason", "")
+
+        if selected:
+            return selected[:3], reasons
+
+    except Exception as e:
+        print(f"AI error: {e}")
+
+    # Резервний варіант, якщо AI недоступний або ключ не додано
+    fallback = [
+        b for b in candidates
+        if b.get("title") not in user_shown_books.get(user_id, [])
+    ][:3]
+    return fallback, {}
 
 
 @dp.message(CommandStart())
 async def start(message: types.Message):
     user_id = message.from_user.id
 
-    if user_id not in user_saved_books:
-        user_saved_books[user_id] = []
-
-    if user_id not in user_shown_books:
-        user_shown_books[user_id] = []
-
+    user_saved_books.setdefault(user_id, [])
+    user_shown_books.setdefault(user_id, [])
     user_answers[user_id] = {}
 
     await message.answer(
-        "Привіт 📚\nЯ допоможу підібрати книгу.\n\nОбери жанр:",
+        "Привіт 📚\nЯ допоможу підібрати книгу.\n\n"
+        "Можеш пройти короткий підбір кнопками або просто написати, що хочеш почитати.\n\n"
+        "Наприклад: «хочу романтичну книгу з легким настроєм».\n\n"
+        "Обери жанр:",
         reply_markup=make_keyboard("genre")
     )
+
+
+@dp.message()
+async def handle_text_request(message: types.Message):
+    user_id = message.from_user.id
+    text = (message.text or "").strip()
+
+    if not text:
+        return
+
+    if len(text) < 4:
+        await message.answer("Напиши трохи детальніше, яку книгу хочеш 📚")
+        return
+
+    user_saved_books.setdefault(user_id, [])
+    user_shown_books.setdefault(user_id, [])
+
+    await message.answer("🤖 Шукаю книги за твоїм запитом...")
+
+    books, reasons = await ai_recommend_books(text, user_id)
+
+    if not books:
+        await message.answer("Не знайшла відповідних книг 😢 Спробуй описати бажання трохи інакше.")
+        return
+
+    for book in books:
+        if book.get("title") not in user_shown_books[user_id]:
+            user_shown_books[user_id].append(book.get("title"))
+
+    await send_books(message, books, reasons)
 
 
 @dp.callback_query()
@@ -152,14 +332,9 @@ async def handle_buttons(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     data = callback.data
 
-    if user_id not in user_answers:
-        user_answers[user_id] = {}
-
-    if user_id not in user_shown_books:
-        user_shown_books[user_id] = []
-
-    if user_id not in user_saved_books:
-        user_saved_books[user_id] = []
+    user_answers.setdefault(user_id, {})
+    user_shown_books.setdefault(user_id, [])
+    user_saved_books.setdefault(user_id, [])
 
     if data == "saved:show":
         saved = user_saved_books.get(user_id, [])
@@ -170,9 +345,10 @@ async def handle_buttons(callback: types.CallbackQuery):
             return
 
         text = "📌 Твої збережені книги:\n\n"
-
         for i, book in enumerate(saved, start=1):
             text += f"{i}. {book.get('title')} — {book.get('author')}\n"
+            if book.get("buy_link"):
+                text += f"   Yakaboo: {book.get('buy_link')}\n"
 
         await callback.message.answer(text)
         await callback.answer()
@@ -187,7 +363,6 @@ async def handle_buttons(callback: types.CallbackQuery):
             return
 
         book = books[index]
-
         already_saved = any(
             saved_book.get("title") == book.get("title")
             for saved_book in user_saved_books[user_id]
@@ -198,7 +373,6 @@ async def handle_buttons(callback: types.CallbackQuery):
             await callback.answer("Книгу збережено ❤️")
         else:
             await callback.answer("Ця книга вже збережена 📌")
-
         return
 
     if data.startswith("delete_saved:"):
@@ -210,7 +384,6 @@ async def handle_buttons(callback: types.CallbackQuery):
             return
 
         book = books[index]
-
         user_saved_books[user_id] = [
             saved_book for saved_book in user_saved_books[user_id]
             if saved_book.get("title") != book.get("title")
@@ -235,14 +408,12 @@ async def handle_buttons(callback: types.CallbackQuery):
             if book.get("genre") == genre
             and book.get("title") != selected_book.get("title")
             and book.get("title") not in user_shown_books.get(user_id, [])
-        ]
+        ][:3]
 
         if not similar_books:
             await callback.message.answer("Схожих книг поки не знайшла 😢")
             await callback.answer()
             return
-
-        similar_books = similar_books[:3]
 
         for book in similar_books:
             user_shown_books[user_id].append(book.get("title"))
@@ -263,12 +434,11 @@ async def handle_buttons(callback: types.CallbackQuery):
 
     if data == "more:yes":
         await callback.answer("Шукаю книги 📚")
-
         books = find_books(user_id)
 
         if not books:
             await callback.message.answer(
-                "Поки що більше варіантів не знайшла 📚\nСпробуй інший жанр.",
+                "Поки що більше варіантів не знайшла 📚\nСпробуй інший жанр або напиши запит текстом.",
                 reply_markup=after_result_keyboard()
             )
             return
@@ -308,12 +478,11 @@ async def handle_buttons(callback: types.CallbackQuery):
 
     if step == "avoid":
         await callback.answer("Шукаю книги 📚")
-
         books = find_books(user_id)
 
         if not books:
             await callback.message.answer(
-                "Немає варіантів 😢\nСпробуй інший жанр.",
+                "Немає варіантів 😢\nСпробуй інший жанр або напиши запит текстом.",
                 reply_markup=after_result_keyboard()
             )
             return
