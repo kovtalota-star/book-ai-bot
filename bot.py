@@ -1,25 +1,21 @@
 import asyncio
 import os
 
+from aiohttp import web
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-
 from books import BOOKS
-
 
 load_dotenv()
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
 
-
 user_answers = {}
 user_shown_books = {}
-user_book_offset = {}
-user_google_start = {}
 user_saved_books = {}
 last_sent_books = {}
 
@@ -56,14 +52,6 @@ OPTIONS = {
     }
 }
 
-def book_action_keyboard(book_index):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{book_index}")],
-            [InlineKeyboardButton(text="🔎 Схожі книги", callback_data=f"similar:{book_index}")],
-            [InlineKeyboardButton(text="🗑 Видалити зі збережених", callback_data=f"delete_saved:{book_index}")]
-        ]
-    )
 
 def make_keyboard(step):
     return InlineKeyboardMarkup(
@@ -84,6 +72,16 @@ def after_result_keyboard():
     )
 
 
+def book_action_keyboard(book_index):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{book_index}")],
+            [InlineKeyboardButton(text="🔎 Схожі книги", callback_data=f"similar:{book_index}")],
+            [InlineKeyboardButton(text="🗑 Видалити зі збережених", callback_data=f"delete_saved:{book_index}")]
+        ]
+    )
+
+
 def find_books(user_id):
     answers = user_answers.get(user_id, {})
     genre = answers.get("genre")
@@ -97,30 +95,12 @@ def find_books(user_id):
         if len(filtered) >= 3:
             books = filtered
 
-    books = [b for b in books if b.get("title") not in shown]
+    books = [
+        b for b in books
+        if b.get("title") not in shown
+    ]
 
-    if len(books) < 3:
-        start_index = user_google_start.get(user_id, 0)
-        google_books = search_google_books(genre, start_index=start_index)
-        user_google_start[user_id] = start_index + 40
-
-        google_books = [
-            b for b in google_books
-            if b.get("title") not in shown
-        ]
-
-        books.extend(google_books)
-
-    unique_books = []
-    seen_titles = set()
-
-    for book in books:
-        title = book.get("title")
-        if title and title not in seen_titles and title not in shown:
-            unique_books.append(book)
-            seen_titles.add(title)
-
-    return unique_books[:3]
+    return books[:3]
 
 
 async def send_books(callback, books):
@@ -143,11 +123,19 @@ async def send_books(callback, books):
         "Що робимо далі?",
         reply_markup=after_result_keyboard()
     )
+
+
 @dp.message(CommandStart())
 async def start(message: types.Message):
     user_id = message.from_user.id
+
+    if user_id not in user_saved_books:
+        user_saved_books[user_id] = []
+
+    if user_id not in user_shown_books:
+        user_shown_books[user_id] = []
+
     user_answers[user_id] = {}
-    user_google_start[user_id] = 0
 
     await message.answer(
         "Привіт 📚\nЯ допоможу підібрати книгу.\n\nОбери жанр:",
@@ -160,8 +148,15 @@ async def handle_buttons(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     data = callback.data
 
+    if user_id not in user_answers:
+        user_answers[user_id] = {}
+
+    if user_id not in user_shown_books:
+        user_shown_books[user_id] = []
+
     if user_id not in user_saved_books:
         user_saved_books[user_id] = []
+
     if data == "saved:show":
         saved = user_saved_books.get(user_id, [])
 
@@ -178,40 +173,48 @@ async def handle_buttons(callback: types.CallbackQuery):
         await callback.message.answer(text)
         await callback.answer()
         return
+
     if data.startswith("save:"):
         index = int(data.split(":")[1])
         books = last_sent_books.get(user_id, [])
 
-        if index < len(books):
-            book = books[index]
+        if index >= len(books):
+            await callback.answer("Не знайшла цю книгу")
+            return
 
-            if book not in user_saved_books[user_id]:
-                user_saved_books[user_id].append(book)
+        book = books[index]
 
+        already_saved = any(
+            saved_book.get("title") == book.get("title")
+            for saved_book in user_saved_books[user_id]
+        )
+
+        if not already_saved:
+            user_saved_books[user_id].append(book)
             await callback.answer("Книгу збережено ❤️")
         else:
-            await callback.answer("Не знайшла цю книгу")
+            await callback.answer("Ця книга вже збережена 📌")
 
         return
+
     if data.startswith("delete_saved:"):
-    index = int(data.split(":")[1])
-    books = last_sent_books.get(user_id, [])
+        index = int(data.split(":")[1])
+        books = last_sent_books.get(user_id, [])
 
-    if index >= len(books):
-        await callback.answer("Не знайшла цю книгу")
+        if index >= len(books):
+            await callback.answer("Не знайшла цю книгу")
+            return
+
+        book = books[index]
+
+        user_saved_books[user_id] = [
+            saved_book for saved_book in user_saved_books[user_id]
+            if saved_book.get("title") != book.get("title")
+        ]
+
+        await callback.answer("Видалено зі збережених 🗑")
         return
 
-    book = books[index]
-    saved = user_saved_books.get(user_id, [])
-
-    user_saved_books[user_id] = [
-        saved_book for saved_book in saved
-        if saved_book.get("title") != book.get("title")
-    ]
-
-    await callback.answer("Видалено зі збережених 🗑")
-    return
-        
     if data.startswith("similar:"):
         index = int(data.split(":")[1])
         books = last_sent_books.get(user_id, [])
@@ -221,18 +224,18 @@ async def handle_buttons(callback: types.CallbackQuery):
             return
 
         selected_book = books[index]
-        user_answers[user_id]["genre"] = selected_book.get("genre")
-        await callback.answer("Шукаю схожі книги 🔎")
+        genre = selected_book.get("genre")
 
         similar_books = [
             book for book in BOOKS
-            if book.get("genre") == selected_book.get("genre")
+            if book.get("genre") == genre
             and book.get("title") != selected_book.get("title")
             and book.get("title") not in user_shown_books.get(user_id, [])
         ]
 
         if not similar_books:
             await callback.message.answer("Схожих книг поки не знайшла 😢")
+            await callback.answer()
             return
 
         similar_books = similar_books[:3]
@@ -240,35 +243,12 @@ async def handle_buttons(callback: types.CallbackQuery):
         for book in similar_books:
             user_shown_books[user_id].append(book.get("title"))
 
+        await callback.answer("Шукаю схожі книги 🔎")
         await send_books(callback, similar_books)
         return
 
-    if user_id not in user_answers:
-        user_answers[user_id] = {}
-    if user_id not in user_shown_books:
-        user_shown_books[user_id] = []
-    if user_id not in user_google_start:
-        user_google_start[user_id] = 0
-    if data == "saved:show":
-        saved = user_saved_books.get(user_id, [])
-
-        if not saved:
-            await callback.message.answer("У тебе ще немає збережених книг 📌")
-            await callback.answer()
-            return
-
-        text = "📌 Твої збережені книги:\n\n"
-
-        for i, book in enumerate(saved, start=1):
-            text += f"{i}. {book.get('title')} — {book.get('author')}\n"
-
-        await callback.message.answer(text)
-        await callback.answer()
-        return
     if data == "restart:yes":
         user_answers[user_id] = {}
-        user_shown_books[user_id] = []
-        user_google_start[user_id] = 0
 
         await callback.message.answer(
             "Обери жанр:",
@@ -341,7 +321,24 @@ async def handle_buttons(callback: types.CallbackQuery):
         return
 
 
+async def health_check(request):
+    return web.Response(text="Bot is running")
+
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", health_check)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+
 async def main():
+    await start_web_server()
     await dp.start_polling(bot)
 
 
