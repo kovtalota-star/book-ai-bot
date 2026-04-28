@@ -305,28 +305,32 @@ async def handle_text_request(message: types.Message):
     if not text:
         return
 
-    if len(text) < 4:
-        await message.answer("Напиши трохи детальніше, яку книгу хочеш 📚")
-        return
-
     user_saved_books.setdefault(user_id, [])
     user_shown_books.setdefault(user_id, [])
 
-    await message.answer("🤖 Шукаю книги за твоїм запитом...")
+    await message.answer("🤖 Думаю...")
 
-    books, reasons = await ai_recommend_books(text, user_id)
+    try:
+        response = await openai_client.responses.create(
+            model=AI_MODEL,
+            input=f"""
+Ти дружній AI-книжковий консультант.
 
-    if not books:
-        await message.answer("Не знайшла відповідних книг 😢 Спробуй описати бажання трохи інакше.")
-        return
+Якщо запит про книги — допоможи підібрати.
+Якщо це питання — відповідай як людина, просто і зрозуміло.
 
-    for book in books:
-        if book.get("title") not in user_shown_books[user_id]:
-            user_shown_books[user_id].append(book.get("title"))
+Повідомлення:
+{text}
+"""
+        )
 
-    await send_books(message, books, reasons)
+        reply = response.output[0].content[0].text
 
+    except Exception as e:
+        print("AI error:", e)
+        reply = "Щось пішло не так 😢"
 
+    await message.answer(reply)
 @dp.callback_query()
 async def handle_buttons(callback: types.CallbackQuery):
     user_id = callback.from_user.id
