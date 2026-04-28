@@ -320,7 +320,7 @@ async def handle_text_request(message: types.Message):
     text = (message.text or "").strip()
 if text == "📚 Обрати жанр":
     user_answers[user_id] = {}
-        await message.answer(
+    await message.answer(
         "Обери жанр:",
         reply_markup=make_keyboard("genre")
     )
