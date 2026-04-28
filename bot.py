@@ -76,6 +76,7 @@ def after_result_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Підібрати ще 3", callback_data="more:yes")],
+            [InlineKeyboardButton(text="📌 Мої збережені", callback_data="saved:show")],
             [InlineKeyboardButton(text="Інший жанр", callback_data="restart:yes")]
         ]
     )
@@ -214,7 +215,22 @@ async def handle_buttons(callback: types.CallbackQuery):
         user_shown_books[user_id] = []
     if user_id not in user_google_start:
         user_google_start[user_id] = 0
+    if data == "saved:show":
+        saved = user_saved_books.get(user_id, [])
 
+        if not saved:
+            await callback.message.answer("У тебе ще немає збережених книг 📌")
+            await callback.answer()
+            return
+
+        text = "📌 Твої збережені книги:\n\n"
+
+        for i, book in enumerate(saved, start=1):
+            text += f"{i}. {book.get('title')} — {book.get('author')}\n"
+
+        await callback.message.answer(text)
+        await callback.answer()
+        return
     if data == "restart:yes":
         user_answers[user_id] = {}
         user_shown_books[user_id] = []
