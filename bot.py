@@ -18,6 +18,7 @@ dp = Dispatcher()
 
 user_answers = {}
 user_shown_books = {}
+user_book_offset = {}
 user_google_start = {}
 user_saved_books = {}
 last_sent_books = {}
@@ -59,7 +60,8 @@ def book_action_keyboard(book_index):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{book_index}")],
-            [InlineKeyboardButton(text="🔎 Схожі книги", callback_data=f"similar:{book_index}")]
+            [InlineKeyboardButton(text="🔎 Схожі книги", callback_data=f"similar:{book_index}")],
+            [InlineKeyboardButton(text="🗑 Видалити зі збережених", callback_data=f"delete_saved:{book_index}")]
         ]
     )
 
@@ -145,7 +147,6 @@ async def send_books(callback, books):
 async def start(message: types.Message):
     user_id = message.from_user.id
     user_answers[user_id] = {}
-    user_shown_books[user_id] = []
     user_google_start[user_id] = 0
 
     await message.answer(
@@ -192,7 +193,25 @@ async def handle_buttons(callback: types.CallbackQuery):
             await callback.answer("Не знайшла цю книгу")
 
         return
+    if data.startswith("delete_saved:"):
+    index = int(data.split(":")[1])
+    books = last_sent_books.get(user_id, [])
 
+    if index >= len(books):
+        await callback.answer("Не знайшла цю книгу")
+        return
+
+    book = books[index]
+    saved = user_saved_books.get(user_id, [])
+
+    user_saved_books[user_id] = [
+        saved_book for saved_book in saved
+        if saved_book.get("title") != book.get("title")
+    ]
+
+    await callback.answer("Видалено зі збережених 🗑")
+    return
+        
     if data.startswith("similar:"):
         index = int(data.split(":")[1])
         books = last_sent_books.get(user_id, [])
