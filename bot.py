@@ -345,7 +345,7 @@ if text == "📌 Мої збережені книги":
     user_saved_books.setdefault(user_id, [])
     user_shown_books.setdefault(user_id, [])
 
-        await message.answer("🤖 Думаю...")
+    await message.answer("🤖 Думаю...")
 
     try:
         response = await openai_client.responses.create(
