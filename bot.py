@@ -510,7 +510,7 @@ async def handle_buttons(callback: types.CallbackQuery):
 
 books, reasons = await ai_recommend_books(query, user_id)
 await send_books(callback, books, reasons)
-        return
+return
 
     step, value = data.split(":")
     user_answers[user_id][step] = value
@@ -550,9 +550,7 @@ await send_books(callback, books, reasons)
             )
             return
 
-        for book in books:
-            user_shown_books[user_id].append(book.get("title"))
-
+    
         await send_books(callback, books)
         return
 
