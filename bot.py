@@ -145,9 +145,9 @@ def book_to_text(book, ai_reason=None):
     )
 
     if ai_reason:
-        text += f"🤖 Чому підійшло:\n{ai_reason}\n\n"
-
-    text += f"📝 Опис:\n{book.get('description', 'Опис поки не додано.')}"
+        text += f"📝 Опис:\n{ai_reason}"
+    else:
+        text += "📝 Опис:\nОпис поки не згенеровано."
 
     return text
 
@@ -500,7 +500,16 @@ async def handle_buttons(callback: types.CallbackQuery):
         for book in books:
             user_shown_books[user_id].append(book.get("title"))
 
-        await send_books(callback, books)
+        query = f"""
+Користувач обрав:
+жанр: {user_answers[user_id].get("genre")}
+настрій: {user_answers[user_id].get("mood")}
+складність: {user_answers[user_id].get("level")}
+уникати: {user_answers[user_id].get("avoid")}
+"""
+
+books, reasons = await ai_recommend_books(query, user_id)
+await send_books(callback, books, reasons)
         return
 
     step, value = data.split(":")
