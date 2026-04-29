@@ -512,8 +512,8 @@ books, reasons = await ai_recommend_books(query, user_id)
 await send_books(callback, books, reasons)
 return
 
-    step, value = data.split(":")
-    user_answers[user_id][step] = value
+step, value = data.split(":")
+user_answers[user_id][step] = value
 
     if step == "genre":
         await callback.message.answer(
