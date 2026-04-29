@@ -499,10 +499,12 @@ async def handle_buttons(callback: types.CallbackQuery):
 
         for book in books:
             user_shown_books[user_id].append(book.get("title"))
-            
 
-step, value = data.split(":")
-user_answers[user_id][step] = value
+        await send_books(callback, books)
+        return
+
+    step, value = data.split(":")
+    user_answers[user_id][step] = value
 
     if step == "genre":
         await callback.message.answer(
@@ -528,7 +530,7 @@ user_answers[user_id][step] = value
         await callback.answer()
         return
 
-      if step == "avoid":
+    if step == "avoid":
         await callback.answer("Шукаю книги 📚")
 
         query = f"""
