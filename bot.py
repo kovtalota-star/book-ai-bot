@@ -499,18 +499,7 @@ async def handle_buttons(callback: types.CallbackQuery):
 
         for book in books:
             user_shown_books[user_id].append(book.get("title"))
-
-        query = f"""
-Користувач обрав:
-жанр: {user_answers[user_id].get("genre")}
-настрій: {user_answers[user_id].get("mood")}
-складність: {user_answers[user_id].get("level")}
-уникати: {user_answers[user_id].get("avoid")}
-"""
-
-books, reasons = await ai_recommend_books(query, user_id)
-await send_books(callback, books, reasons)
-return
+            
 
 step, value = data.split(":")
 user_answers[user_id][step] = value
@@ -539,9 +528,18 @@ user_answers[user_id][step] = value
         await callback.answer()
         return
 
-    if step == "avoid":
+      if step == "avoid":
         await callback.answer("Шукаю книги 📚")
-        books = find_books(user_id)
+
+        query = f"""
+Користувач обрав:
+жанр: {user_answers[user_id].get("genre")}
+настрій: {user_answers[user_id].get("mood")}
+складність: {user_answers[user_id].get("level")}
+уникати: {user_answers[user_id].get("avoid")}
+"""
+
+        books, reasons = await ai_recommend_books(query, user_id)
 
         if not books:
             await callback.message.answer(
@@ -550,8 +548,10 @@ user_answers[user_id][step] = value
             )
             return
 
-    
-        await send_books(callback, books)
+        for book in books:
+            user_shown_books[user_id].append(book.get("title"))
+
+        await send_books(callback, books, reasons)
         return
 
 
