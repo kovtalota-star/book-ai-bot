@@ -645,12 +645,17 @@ async def handle_buttons(callback: types.CallbackQuery):
 
 
 async def health_check(request):
-    return web.Response(text="Bot is running")
+    return web.Response(text="Bot is running", status=200)
+
+
+async def events_check(request):
+    return web.Response(text="OK", status=200)
 
 
 async def start_web_server():
     app = web.Application()
     app.router.add_get("/", health_check)
+    app.router.add_get("/events", events_check)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -659,9 +664,15 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
+    print(f"Web server started on port {port}")
+
 
 async def main():
+    print("Starting web server...")
     await start_web_server()
+
+    print("Starting Telegram bot...")
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 
